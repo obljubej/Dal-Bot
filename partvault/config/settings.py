@@ -42,3 +42,7 @@ PRICE_REFRESH_DAYS: int = int(os.getenv("PRICE_REFRESH_DAYS", "7"))
 
 # Currency
 DEFAULT_CURRENCY: str = os.getenv("DEFAULT_CURRENCY", "CAD")
+
+# Dashboard / GitHub Pages
+DASHBOARD_EXPORT_PATH: str = os.getenv("DASHBOARD_EXPORT_PATH", str(BASE_DIR / "docs" / "index.html"))
+DASHBOARD_PUBLIC_URL: str = os.getenv("DASHBOARD_PUBLIC_URL", "")

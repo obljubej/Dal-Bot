@@ -19,6 +19,7 @@ from partvault.bot.ui.embeds import (
     embed_warning,
 )
 from partvault.config import settings
+from partvault.dashboard.generator import export_dashboard
 from partvault.database.connection import get_session
 from partvault.inventory import service
 from partvault.inventory.matcher import find_product, infer_category, parse_quick_command
@@ -26,6 +27,13 @@ from partvault.inventory.models import Category, Condition
 from partvault.inventory.service import add_alias, create_product
 
 log = logging.getLogger(__name__)
+
+
+def _refresh_dashboard() -> None:
+    try:
+        export_dashboard()
+    except Exception as exc:
+        log.error("Dashboard export failed: %s", exc)
 
 # Pending reaction-confirmation state: prompt_message_id → operation dict
 _pending: dict[int, dict] = {}
@@ -295,6 +303,7 @@ async def _run_op(channel, action, product, quantity, condition, discord_user_id
                 condition=condition,
                 discord_user_id=discord_user_id,
             )
+            _refresh_dashboard()
             await channel.send(embed=embed_add_success(item, product, quantity))
         else:
             item = service.remove_inventory(
@@ -304,6 +313,7 @@ async def _run_op(channel, action, product, quantity, condition, discord_user_id
                 condition=condition,
                 discord_user_id=discord_user_id,
             )
+            _refresh_dashboard()
             await channel.send(embed=embed_remove_success(item, product, quantity))
     except ValueError as exc:
         await channel.send(embed=embed_error(str(exc)))

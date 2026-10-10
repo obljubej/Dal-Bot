@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from partvault.config import settings
+from partvault.dashboard.generator import export_dashboard
 from partvault.database.connection import get_session
 from partvault.pricing.engine import refresh_all_prices
 
@@ -24,6 +25,7 @@ async def run_price_scheduler() -> None:
             with get_session() as session:
                 count = await refresh_all_prices(session)
             log.info("Price scheduler: refreshed %d product(s).", count)
+            export_dashboard()
         except Exception as exc:
             log.error("Price scheduler error: %s", exc)
 

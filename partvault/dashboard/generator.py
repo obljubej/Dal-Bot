@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from partvault.config import settings
+from partvault.database.connection import get_session
 from partvault.inventory.models import InventoryItem, PriceRecord, Product
+from partvault.inventory import service
 from partvault.inventory.service import InventoryResult
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "dashboard.html"
+log = logging.getLogger(__name__)
 
 
 def build_inventory_json(results: list[InventoryResult]) -> list[dict]:
@@ -144,3 +149,20 @@ def render_dashboard(results: list[InventoryResult], price_records: list[PriceRe
         f"const SUMMARY = {json.dumps(summary, default=str)};",
     )
     return html
+
+
+def export_dashboard(path: str | Path | None = None) -> Path:
+    """Render the current inventory dashboard and write it to disk."""
+    output_path = Path(path or settings.DASHBOARD_EXPORT_PATH)
+    if not output_path.is_absolute():
+        output_path = settings.BASE_DIR / output_path
+
+    with get_session() as session:
+        results = service.get_inventory(session, include_zero=False)
+        price_records = session.query(PriceRecord).all()
+        html = render_dashboard(results, price_records)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
+    log.info("Dashboard exported to %s", output_path)
+    return output_path

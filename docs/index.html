@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PartVault — Inventory Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root[data-theme="dark"] {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #22263a;
+  --border: #2e3250;
+  --text: #e2e8f0;
+  --text-muted: #8892a4;
+  --accent: #5865f2;
+  --green: #57f287;
+  --red: #ed4245;
+  --yellow: #fee75c;
+  --card-shadow: 0 2px 16px rgba(0,0,0,0.4);
+}
+:root[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --surface2: #f7f9fc;
+  --border: #dde1ea;
+  --text: #1a1d27;
+  --text-muted: #5b6378;
+  --accent: #5865f2;
+  --green: #2d7a47;
+  --red: #c0392b;
+  --yellow: #b7950b;
+  --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--accent); text-decoration: none; }
+
+/* Layout */
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; flex-wrap: wrap; gap: 12px; }
+.header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; }
+.header h1 span { color: var(--accent); }
+.header-right { display: flex; gap: 10px; align-items: center; }
+.generated { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Buttons */
+.btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.875rem; font-weight: 600; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+/* Summary cards */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--card-shadow); }
+.stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.stat-value { font-size: 1.6rem; font-weight: 700; }
+.stat-value.green { color: var(--green); }
+.stat-value.red { color: var(--red); }
+.stat-value.yellow { color: var(--yellow); }
+
+/* Charts */
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 32px; }
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--card-shadow); }
+.chart-card h3 { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+.chart-wrap { position: relative; height: 220px; }
+
+/* Controls */
+.controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.search-box { flex: 1; min-width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.15s; }
+.search-box:focus { border-color: var(--accent); }
+.filter-select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 0.875rem; cursor: pointer; outline: none; }
+
+/* Table */
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--card-shadow); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+thead { background: var(--surface2); }
+th { padding: 12px 16px; text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); cursor: pointer; white-space: nowrap; user-select: none; }
+th:hover { color: var(--text); }
+th .sort-icon { margin-left: 4px; opacity: 0.4; }
+th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+td { padding: 13px 16px; border-top: 1px solid var(--border); vertical-align: middle; }
+tr:hover td { background: var(--surface2); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+.badge-new { background: rgba(87,242,135,0.15); color: var(--green); }
+.badge-used { background: rgba(88,101,242,0.15); color: var(--accent); }
+.badge-refurbished { background: rgba(254,231,92,0.15); color: var(--yellow); }
+.badge-broken { background: rgba(237,66,69,0.15); color: var(--red); }
+.conf-high { color: var(--green); }
+.conf-medium { color: var(--yellow); }
+.conf-low { color: var(--red); }
+.na { color: var(--text-muted); font-style: italic; }
+
+/* Expandable row */
+.expand-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 1rem; padding: 0 4px; transition: transform 0.2s; }
+.expand-btn.open { transform: rotate(90deg); }
+.detail-row td { padding: 0; }
+.detail-inner { padding: 14px 24px 14px 48px; background: var(--surface2); font-size: 0.85rem; color: var(--text-muted); display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.detail-inner strong { display: block; color: var(--text); font-size: 0.8rem; margin-bottom: 2px; }
+.hidden { display: none; }
+
+/* Empty state */
+.empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty-icon { font-size: 3rem; margin-bottom: 12px; }
+
+/* Footer */
+.footer { margin-top: 40px; text-align: center; font-size: 0.78rem; color: var(--text-muted); padding-bottom: 24px; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  th:nth-child(n+5), td:nth-child(n+5) { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>Part<span>Vault</span></h1>
+    <div class="header-right">
+      <span class="generated" id="gen-time"></span>
+      <button class="btn btn-ghost" onclick="exportCSV()">⬇ CSV</button>
+      <button class="btn btn-ghost" onclick="toggleTheme()">☀ / 🌙</button>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="stats-grid" id="stats-grid"></div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Components by Category</h3>
+      <div class="chart-wrap"><canvas id="chart-category"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Quantity by Category</h3>
+      <div class="chart-wrap"><canvas id="chart-qty"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Purchase Cost vs. Used Value</h3>
+      <div class="chart-wrap"><canvas id="chart-value"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <input class="search-box" id="search" type="text" placeholder="Search products…" oninput="applyFilters()">
+    <select class="filter-select" id="filter-cat" onchange="applyFilters()">
+      <option value="">All Categories</option>
+    </select>
+    <select class="filter-select" id="filter-cond" onchange="applyFilters()">
+      <option value="">All Conditions</option>
+      <option value="new">New</option>
+      <option value="used">Used</option>
+      <option value="refurbished">Refurbished</option>
+      <option value="broken">Broken</option>
+    </select>
+    <span id="row-count" style="color:var(--text-muted);font-size:0.85rem;margin-left:auto;"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table id="inv-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th onclick="sortBy('display_name')" data-col="display_name">Product <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('category')" data-col="category">Category <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('condition')" data-col="condition">Condition <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('quantity')" data-col="quantity">Qty <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('new_price')" data-col="new_price">New/Unit <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('used_price')" data-col="used_price">Used/Unit <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('_total_used')" data-col="_total_used">Total Used <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="inv-body"></tbody>
+    </table>
+    <div class="empty hidden" id="empty-state">
+      <div class="empty-icon">📦</div>
+      <div>No items match your filters.</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Generated by <strong>PartVault</strong> · Prices are estimates only · Not financial advice
+  </div>
+</div>
+
+<script>
+const INVENTORY = [{"id": 3, "category": "Graphics Cards", "manufacturer": "AMD", "model": "Radeon RX 7800 XT", "variant": "", "display_name": "AMD Radeon RX 7800 XT", "condition": "used", "quantity": 1, "purchase_price": null, "purchase_date": null, "storage_location": "", "notes": "", "used_price": null, "new_price": null, "used_confidence": null, "new_confidence": null, "price_updated": null}, {"id": 1, "category": "Processors", "manufacturer": "AMD", "model": "Ryzen 9 9800X3D", "variant": "", "display_name": "AMD Ryzen 9 9800X3D", "condition": "used", "quantity": 1, "purchase_price": null, "purchase_date": null, "storage_location": "", "notes": "", "used_price": null, "new_price": null, "used_confidence": null, "new_confidence": null, "price_updated": null}];
+const SUMMARY = {"total_components": 2, "unique_products": 2, "purchase_cost": 0, "estimated_used_value": 0, "estimated_new_value": 0, "by_category": {"Graphics Cards": 1, "Processors": 1}, "generated_at": "2026-10-10T19:49:22.666352+00:00"};
+
+// -----------------------------------------------------------------------
+// State
+// -----------------------------------------------------------------------
+let sortCol = 'category';
+let sortAsc = true;
+let filtered = [...INVENTORY];
+
+// -----------------------------------------------------------------------
+// Init
+// -----------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('gen-time').textContent =
+    'Generated ' + new Date(SUMMARY.generated_at).toLocaleString();
+
+  renderStats();
+  populateFilters();
+  renderCharts();
+  applyFilters();
+});
+
+// -----------------------------------------------------------------------
+// Stats cards
+// -----------------------------------------------------------------------
+function renderStats() {
+  const g = document.getElementById('stats-grid');
+  const fmt = (n) => n != null ? n.toLocaleString('en-CA', {minimumFractionDigits: 0, maximumFractionDigits: 0}) : '—';
+  const fmtC = (n, cur) => n != null ? `$${n.toLocaleString('en-CA', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${cur || ''}` : 'N/A';
+
+  const gainLoss = SUMMARY.estimated_used_value && SUMMARY.purchase_cost
+    ? SUMMARY.estimated_used_value - SUMMARY.purchase_cost : null;
+
+  const cards = [
+    { label: 'Total Components', value: fmt(SUMMARY.total_components), cls: '' },
+    { label: 'Unique Products',  value: fmt(SUMMARY.unique_products),  cls: '' },
+    { label: 'Purchase Cost',    value: fmtC(SUMMARY.purchase_cost, ''), cls: '' },
+    { label: 'Est. New Value',   value: fmtC(SUMMARY.estimated_new_value, ''), cls: 'green' },
+    { label: 'Est. Used Value',  value: fmtC(SUMMARY.estimated_used_value, ''), cls: 'green' },
+    { label: 'Unrealized P/L',   value: gainLoss != null ? (gainLoss >= 0 ? '+' : '') + fmtC(gainLoss, '') : 'N/A', cls: gainLoss == null ? '' : gainLoss >= 0 ? 'green' : 'red' },
+  ];
+  g.innerHTML = cards.map(c =>
+    `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-value ${c.cls}">${c.value}</div></div>`
+  ).join('');
+}
+
+// -----------------------------------------------------------------------
+// Filters & table
+// -----------------------------------------------------------------------
+function populateFilters() {
+  const cats = [...new Set(INVENTORY.map(r => r.category))].sort();
+  const sel = document.getElementById('filter-cat');
+  cats.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+}
+
+function applyFilters() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const cat    = document.getElementById('filter-cat').value;
+  const cond   = document.getElementById('filter-cond').value;
+
+  filtered = INVENTORY.filter(r => {
+    if (cat  && r.category  !== cat)  return false;
+    if (cond && r.condition !== cond) return false;
+    if (search) {
+      const hay = `${r.display_name} ${r.manufacturer} ${r.model} ${r.category} ${r.notes}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  sortFiltered();
+  renderTable();
+}
+
+function sortBy(col) {
+  if (sortCol === col) { sortAsc = !sortAsc; }
+  else { sortCol = col; sortAsc = true; }
+  document.querySelectorAll('th[data-col]').forEach(th => th.classList.toggle('sorted', th.dataset.col === col));
+  sortFiltered();
+  renderTable();
+}
+
+function sortFiltered() {
+  filtered.sort((a, b) => {
+    let av = col(a, sortCol), bv = col(b, sortCol);
+    if (av == null) av = sortAsc ? Infinity : -Infinity;
+    if (bv == null) bv = sortAsc ? Infinity : -Infinity;
+    if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+}
+
+function col(r, c) {
+  if (c === '_total_used') return r.used_price != null ? r.used_price * r.quantity : null;
+  return r[c] ?? null;
+}
+
+function renderTable() {
+  const tbody = document.getElementById('inv-body');
+  const empty = document.getElementById('empty-state');
+  document.getElementById('row-count').textContent = `${filtered.length} item(s)`;
+
+  if (!filtered.length) { tbody.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  tbody.innerHTML = filtered.map((r, i) => {
+    const totalUsed = r.used_price != null ? `$${(r.used_price * r.quantity).toFixed(2)}` : '<span class="na">N/A</span>';
+    const usedStr   = r.used_price != null ? `<span class="conf-${r.used_confidence}">$${r.used_price.toFixed(2)}</span>` : '<span class="na">N/A</span>';
+    const newStr    = r.new_price  != null ? `<span class="conf-${r.new_confidence}">$${r.new_price.toFixed(2)}</span>`  : '<span class="na">N/A</span>';
+    const badge     = `<span class="badge badge-${r.condition}">${r.condition}</span>`;
+    const detId     = `det-${i}`;
+    const detailFields = [
+      r.purchase_price != null ? `<div><strong>Purchase Price</strong>$${r.purchase_price.toFixed(2)}</div>` : '',
+      r.purchase_date  ? `<div><strong>Purchase Date</strong>${r.purchase_date.slice(0,10)}</div>` : '',
+      r.storage_location ? `<div><strong>Location</strong>${esc(r.storage_location)}</div>` : '',
+      r.notes ? `<div><strong>Notes</strong>${esc(r.notes)}</div>` : '',
+      r.price_updated ? `<div><strong>Price Updated</strong>${r.price_updated.slice(0,10)}</div>` : '',
+    ].filter(Boolean).join('');
+
+    return `
+      <tr>
+        <td><button class="expand-btn" onclick="toggleDetail('${detId}',this)" title="Details">▶</button></td>
+        <td><strong>${esc(r.display_name)}</strong></td>
+        <td>${esc(r.category)}</td>
+        <td>${badge}</td>
+        <td>${r.quantity}</td>
+        <td>${newStr}</td>
+        <td>${usedStr}</td>
+        <td>${totalUsed}</td>
+      </tr>
+      <tr class="detail-row hidden" id="${detId}">
+        <td colspan="8"><div class="detail-inner">${detailFields || '<div>No additional info.</div>'}</div></td>
+      </tr>`;
+  }).join('');
+}
+
+function toggleDetail(id, btn) {
+  const row = document.getElementById(id);
+  const hidden = row.classList.toggle('hidden');
+  btn.classList.toggle('open', !hidden);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// -----------------------------------------------------------------------
+// Charts
+// -----------------------------------------------------------------------
+function renderCharts() {
+  const theme = document.documentElement.getAttribute('data-theme');
+  const textColor = theme === 'dark' ? '#8892a4' : '#5b6378';
+  const palette = ['#5865f2','#57f287','#fee75c','#ed4245','#eb459e','#faa61a','#23a55a','#f0b232','#80848e','#b9bbbe','#3ba55c','#ffa500'];
+
+  // Category breakdown from SUMMARY
+  const cats = Object.keys(SUMMARY.by_category || {});
+  const catQty = cats.map(c => SUMMARY.by_category[c]);
+
+  new Chart(document.getElementById('chart-category'), {
+    type: 'doughnut',
+    data: { labels: cats, datasets: [{ data: catQty, backgroundColor: palette }] },
+    options: { plugins: { legend: { labels: { color: textColor, font: { size: 12 } } } }, cutout: '60%' },
+  });
+
+  // Qty bar
+  new Chart(document.getElementById('chart-qty'), {
+    type: 'bar',
+    data: { labels: cats, datasets: [{ label: 'Units', data: catQty, backgroundColor: '#5865f2' }] },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        y: { ticks: { color: textColor }, grid: { color: 'rgba(128,128,128,0.1)' }, beginAtZero: true },
+      },
+    },
+  });
+
+  // Cost vs value by category
+  const catCost  = {};
+  const catValue = {};
+  INVENTORY.forEach(r => {
+    catCost[r.category]  = (catCost[r.category]  || 0) + (r.purchase_price || 0) * r.quantity;
+    catValue[r.category] = (catValue[r.category] || 0) + (r.used_price      || 0) * r.quantity;
+  });
+  const vCats = Object.keys(catCost);
+
+  new Chart(document.getElementById('chart-value'), {
+    type: 'bar',
+    data: {
+      labels: vCats,
+      datasets: [
+        { label: 'Purchase Cost', data: vCats.map(c => catCost[c].toFixed(2)),  backgroundColor: 'rgba(88,101,242,0.7)' },
+        { label: 'Used Value',    data: vCats.map(c => catValue[c].toFixed(2)), backgroundColor: 'rgba(87,242,135,0.7)' },
+      ],
+    },
+    options: {
+      plugins: { legend: { labels: { color: textColor } } },
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        y: { ticks: { color: textColor, callback: v => '$'+v }, grid: { color: 'rgba(128,128,128,0.1)' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+// -----------------------------------------------------------------------
+// CSV export
+// -----------------------------------------------------------------------
+function exportCSV() {
+  const headers = ['Category','Manufacturer','Model','Variant','Condition','Quantity','Purchase Price','New Price','Used Price','Total Used Value','Storage','Notes'];
+  const rows = filtered.map(r => [
+    r.category, r.manufacturer, r.model, r.variant, r.condition, r.quantity,
+    r.purchase_price ?? '', r.new_price ?? '', r.used_price ?? '',
+    r.used_price != null ? (r.used_price * r.quantity).toFixed(2) : '',
+    r.storage_location, r.notes,
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'inventory.csv';
+  a.click();
+}
+
+// -----------------------------------------------------------------------
+// Theme toggle
+// -----------------------------------------------------------------------
+function toggleTheme() {
+  const html = document.documentElement;
+  html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>

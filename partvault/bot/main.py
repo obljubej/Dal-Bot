@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from partvault.config import settings
+from partvault.dashboard.generator import export_dashboard
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,11 @@ class PartVaultBot(commands.Bot):
                 name="your hardware inventory",
             )
         )
+
+        try:
+            export_dashboard()
+        except Exception as exc:
+            log.error("Dashboard export failed on startup: %s", exc)
 
         # Start background price scheduler if eBay is configured
         if settings.EBAY_APP_ID and self._scheduler_task is None:

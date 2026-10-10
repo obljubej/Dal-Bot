@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 
 import discord
 from discord import app_commands
@@ -21,11 +22,22 @@ from partvault.bot.ui.embeds import (
     embed_warning,
 )
 from partvault.config import settings
+from partvault.dashboard.generator import export_dashboard
 from partvault.database.connection import get_session
 from partvault.inventory import service
 from partvault.inventory.matcher import find_product, infer_category
 from partvault.inventory.models import Category, Condition, Product
 from partvault.inventory.service import create_product
+
+
+log = logging.getLogger(__name__)
+
+
+def _refresh_dashboard() -> None:
+    try:
+        export_dashboard()
+    except Exception as exc:
+        log.error("Dashboard export failed: %s", exc)
 
 
 def _is_authorized(interaction: discord.Interaction) -> bool:
@@ -36,12 +48,25 @@ def _is_authorized(interaction: discord.Interaction) -> bool:
 
 async def _require_auth(interaction: discord.Interaction) -> bool:
     if not _is_authorized(interaction):
-        await interaction.response.send_message(
-            embed=embed_error("You are not authorized to modify inventory."),
-            ephemeral=True,
-        )
+        try:
+            await interaction.response.send_message(
+                embed=embed_error("You are not authorized to modify inventory."),
+                ephemeral=True,
+            )
+        except discord.NotFound:
+            log.warning("Interaction expired before auth response could be sent")
         return False
     return True
+
+
+async def _defer_interaction(interaction: discord.Interaction) -> bool:
+    """Defer an interaction without crashing if Discord already expired it."""
+    try:
+        await interaction.response.defer()
+        return True
+    except discord.NotFound:
+        log.warning("Interaction expired before it could be deferred")
+        return False
 
 
 class InventoryCog(commands.Cog, name="Inventory"):
@@ -115,7 +140,8 @@ class InventoryCog(commands.Cog, name="Inventory"):
             )
             return
 
-        await interaction.response.defer()
+        if not await _defer_interaction(interaction):
+            return
 
         with get_session() as session:
             match = find_product(session, product)
@@ -141,6 +167,7 @@ class InventoryCog(commands.Cog, name="Inventory"):
                 )
                 embed = embed_add_success(item, new_product, quantity)
                 embed.set_footer(text="⚠️ Product not recognized — added as Miscellaneous. Use /product alias to link it.")
+                _refresh_dashboard()
                 await interaction.followup.send(embed=embed)
             else:
                 item = service.add_inventory(
@@ -152,6 +179,7 @@ class InventoryCog(commands.Cog, name="Inventory"):
                     notes=notes,
                     discord_user_id=str(interaction.user.id),
                 )
+                _refresh_dashboard()
                 await interaction.followup.send(embed=embed_add_success(item, match.product, quantity))
 
     @inventory_group.command(name="remove", description="Remove components from inventory")
@@ -183,7 +211,8 @@ class InventoryCog(commands.Cog, name="Inventory"):
             )
             return
 
-        await interaction.response.defer()
+        if not await _defer_interaction(interaction):
+            return
 
         with get_session() as session:
             match = find_product(session, product)
@@ -199,6 +228,7 @@ class InventoryCog(commands.Cog, name="Inventory"):
                     condition=condition_value,
                     discord_user_id=str(interaction.user.id),
                 )
+                _refresh_dashboard()
                 await interaction.followup.send(embed=embed_remove_success(item, match.product, quantity))
             except ValueError as exc:
                 await interaction.followup.send(embed=embed_error(str(exc)))
@@ -260,6 +290,7 @@ class InventoryCog(commands.Cog, name="Inventory"):
                 )
                 return
 
+            _refresh_dashboard()
             await interaction.response.send_message(
                 embed=embed_info(
                     "✅ Alias Added",
@@ -304,6 +335,7 @@ class InventoryCog(commands.Cog, name="Inventory"):
                 variant=variant,
                 aliases=aliases,
             )
+            _refresh_dashboard()
             await interaction.response.send_message(
                 embed=embed_info(
                     "✅ Product Created",
@@ -329,7 +361,8 @@ class InventoryCog(commands.Cog, name="Inventory"):
             )
             return
 
-        await interaction.response.defer()
+        if not await _defer_interaction(interaction):
+            return
 
         with get_session() as session:
             results = service.get_inventory(session)
@@ -358,7 +391,8 @@ class InventoryCog(commands.Cog, name="Inventory"):
 
     @export_group.command(name="csv", description="Export inventory as a CSV file")
     async def export_csv(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
+        if not await _defer_interaction(interaction):
+            return
 
         with get_session() as session:
             results = service.get_inventory(session, include_zero=False)
@@ -372,7 +406,8 @@ class InventoryCog(commands.Cog, name="Inventory"):
 
     @export_group.command(name="html", description="Generate a self-contained HTML inventory dashboard")
     async def export_html(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
+        if not await _defer_interaction(interaction):
+            return
 
         from partvault.dashboard.generator import render_dashboard
         from partvault.inventory.models import PriceRecord
@@ -390,6 +425,23 @@ class InventoryCog(commands.Cog, name="Inventory"):
             content=f"🖥️ Dashboard export — **{len(results)}** item(s). Open the file in your browser.",
             file=file,
         )
+
+    @app_commands.command(name="dashboard", description="Get the public inventory dashboard link")
+    async def dashboard_link(self, interaction: discord.Interaction) -> None:
+        _refresh_dashboard()
+
+        if settings.DASHBOARD_PUBLIC_URL:
+            embed = embed_info(
+                "🖥️ Inventory Dashboard",
+                f"Open the live dashboard here:\n{settings.DASHBOARD_PUBLIC_URL}",
+            )
+        else:
+            embed = embed_warning(
+                "Dashboard URL is not configured. Set `DASHBOARD_PUBLIC_URL` in `.env`, "
+                "then configure GitHub Pages to publish from `/docs` on your main branch."
+            )
+
+        await interaction.response.send_message(embed=embed)
 
 
 # ---------------------------------------------------------------------------
